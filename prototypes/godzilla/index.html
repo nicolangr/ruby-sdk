@@ -80,26 +80,38 @@
   #res:empty { display: none; }
   .card ul { list-style: none; padding: 0; margin: 0 0 16px; font-size: 21px; line-height: 1.15; text-align: left; display: grid; gap: 6px; }
   .card li::before { content: "~ "; color: var(--fire); font-weight: 700; }
-  #play {
-    font: 700 34px/1 Caveat, cursive; color: var(--paper); background: var(--fire);
-    border: 2.5px solid var(--ink); padding: 8px 34px 10px; cursor: pointer;
+  .lv { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .play {
+    font: 700 30px/1 Caveat, cursive; color: var(--paper); background: var(--fire);
+    border: 2.5px solid var(--ink); padding: 8px 22px 10px; cursor: pointer;
     border-radius: 15px 225px 15px 255px / 255px 15px 225px 15px;
   }
-  #play:focus-visible, #pad button:focus-visible { outline: 3px dashed var(--fire); outline-offset: 3px; }
+  .play small { display: block; font-size: 18px; font-weight: 500; opacity: .85; }
+  .play.alt { background: var(--ink); }
+  .play:disabled { opacity: .35; cursor: default; }
+  .play:focus-visible, #pad button:focus-visible { outline: 3px dashed var(--fire); outline-offset: 3px; }
   @media (max-height: 460px) {
     .card { padding: 12px 20px 14px; max-width: 520px; }
     .card h1 { font-size: 46px; }
     .card .sub { margin: 0 0 6px; font-size: 20px; }
     .card ul { font-size: 18px; margin-bottom: 10px; gap: 2px; }
-    #play { font-size: 28px; padding: 6px 28px 8px; }
+    .play { font-size: 26px; padding: 5px 18px 7px; }
+    .play small { font-size: 16px; }
   }
+  #banner {
+    position: fixed; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none;
+    font-size: clamp(44px, 12vw, 86px); font-weight: 700; color: var(--fire);
+    text-shadow: 3px 3px 0 var(--paper), -2px -2px 0 var(--paper);
+    animation: pop 2.2s ease-out forwards;
+  }
+  @keyframes pop { 0% { transform: scale(.4) rotate(-6deg); opacity: 0; } 15% { transform: scale(1.1) rotate(2deg); opacity: 1; } 80% { opacity: 1; } 100% { transform: scale(1) rotate(0); opacity: 0; } }
   #best { margin: 10px 0 0; font-size: 18px; color: var(--ink-soft); }
 </style>
 
 <canvas id="c"></canvas>
 
 <div id="hud">
-  <div class="score"><b id="sc">0</b><small>punti · <span id="kills">0</span> palazzi</small></div>
+  <div class="score"><b id="sc">0</b><small>punti · <span id="kills">0</span></small></div>
   <div class="bars">
     <div class="bar">vita<span><i id="hpb"></i></span></div>
     <div class="bar">fuoco<span><i id="enb"></i></span></div>
@@ -111,6 +123,7 @@
   <button id="br" aria-label="Cammina a destra">&rarr;</button>
 </div>
 <div id="hint">tieni premuto per sputare fuoco</div>
+<div id="banner" hidden></div>
 
 <div id="menu">
   <div class="card">
@@ -119,10 +132,14 @@
     <p id="res"></p>
     <ul>
       <li>Tieni il dito sullo schermo: il fuoco va dove tocchi.</li>
-      <li>Frecce in basso per camminare. I palazzi interi ti bloccano.</li>
-      <li>Abbatti gli elicotteri prima che abbattano te.</li>
+      <li>Livello 1: Godzilla cammina con le frecce. Distruggi 12 palazzi.</li>
+      <li>Livello 2: l'Uccellone vola da solo, tu lo guidi su e giù. Non sbattere contro i palazzi.</li>
+      <li>Abbatti elicotteri e jet prima che abbattano te.</li>
     </ul>
-    <button id="play">Gioca</button>
+    <div class="lv">
+      <button class="play" id="play1">Livello 1<small>Godzilla</small></button>
+      <button class="play alt" id="play2">Livello 2<small>Uccellone</small></button>
+    </div>
     <p id="best"></p>
   </div>
 </div>
@@ -190,18 +207,39 @@
   })();
   const HEAD = jaw => [[12, -14], [-26, -25], [-63, -21], [-61, -9], [-18, -3], [-52, 6 + jaw], [-49, 15 + jaw], [-8, 18], [13, 8]];
 
+  // ---------- Uccellone model (faces left, centre at 0,0) — from the second sketch ----------
+  const zig = (a, b, n, off) => {
+    const out = [];
+    for (let i = 1; i <= n; i++) {
+      const m = (i - .5) / n, e = i / n;
+      out.push([a[0] + (b[0] - a[0]) * m + off[0], a[1] + (b[1] - a[1]) * m + off[1]]);
+      out.push([a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e]);
+    }
+    return out;
+  };
+  // toothy open beak: upper jaw teeth point down, lower jaw teeth point up
+  const BHEAD = jaw => [[6, -14], [-62, -26], ...zig([-62, -26], [-6, -3], 5, [2, 8]), ...zig([-6, -3], [-58, 12 + jaw], 5, [2, -8]), [4, 12]];
+  const BBODY = [[-44, -14], [-20, -22], [20, -24], [60, -18], [100, -8], [118, -4], [150, -42], [138, -2], [154, 30], [116, 8], [80, 14], [30, 20], [-10, 16], [-44, 8]];
+  const SPINES = [[-30, 26], [-18, 36], [-6, 46], [6, 42], [18, 38], [30, 32], [42, 22]];
+  const BS = 1.15, HS = 1.35; // bird scale, extra head scale
+  const WING = [[0, 0], [30, -60], [70, -115], [112, -152], [92, -110], [98, -80], [70, -70], [80, -42], [50, -36], [54, -12], [28, -4]];
+
   // ---------- state ----------
-  let G, buildings, helis, parts, bullets, score, kills, running = false, t = 0, shake = 0;
-  let camX = 0, nextBx, heliT, emitAcc, uid = 1, startX;
+  let G, buildings, helis, parts, bullets, people, score, kills, running = false, t = 0, shake = 0;
+  let camX = 0, nextBx, heliT, jetT, emitAcc, uid = 1, startX, LV = 1;
+  const GOAL = 12;
   const keys = {}, ptr = new Map();
   let walkBtn = 0, aimPt = null;
 
-  function reset() {
-    G = { x: 0, bob: 0, walk: 0, phase: 0, aim: .5, hp: 100, en: 100, hot: false, hurt: 0, firing: false, jaw: 0 };
+  const camK = () => LV === 1 ? .66 : .6;
+  function reset(lv = LV, keepScore = 0) {
+    LV = lv;
+    G = { x: 0, y: -Math.min(300, (VH - GR) * .5), vy: 0, tilt: 0, bob: 0, walk: 0, phase: 0, aim: LV === 1 ? .5 : .15,
+      hp: 100, en: 100, hot: false, hurt: 0, firing: false, jaw: 0 };
     startX = 0;
-    camX = G.x - VW * .66;
-    buildings = []; helis = []; parts = []; bullets = [];
-    score = 0; kills = 0; heliT = 4; emitAcc = 0; shake = 0;
+    camX = G.x - VW * camK();
+    buildings = []; helis = []; parts = []; bullets = []; people = [];
+    score = keepScore; kills = 0; heliT = 4; jetT = 7; emitAcc = 0; shake = 0;
     nextBx = G.x - 120;
     genCity();
     hudDirty = true;
@@ -216,7 +254,7 @@
       const b = {
         id: uid++, x: nextBx - w, w, h, max: w * h / 26, hp: w * h / 26, burn: 0, dead: false, col: 0,
         slant: (R(uid * 9.3) - .5) * 8, tilt: (R(uid * 2.2) - .5) * .5,
-        wx: 13 + R(uid * 4.4) * 6, wy: 18 + R(uid * 6.6) * 8, roof: R(uid * 8.8)
+        wx: 13 + R(uid * 4.4) * 6, wy: 18 + R(uid * 6.6) * 8, roof: R(uid * 8.8), guy: R(uid * 1.9) > .5, fled: false
       };
       buildings.push(b);
       nextBx -= w + 6 + R(uid * 7.7) * 26;
@@ -320,26 +358,46 @@
     const s = `${score}|${kills}|${G.hp | 0}|${G.en | 0}|${G.hot}`;
     if (s === lastHud && !hudDirty) return;
     lastHud = s; hudDirty = false;
-    $('sc').textContent = fmt(score); $('kills').textContent = kills;
+    $('sc').textContent = fmt(score);
+    $('kills').textContent = LV === 1 ? `${kills}/${GOAL} palazzi` : `${kills} palazzi · liv. 2`;
     $('hpb').style.width = Math.max(0, G.hp) + '%';
     $('enb').style.width = G.en + '%';
     $('enb').classList.toggle('hot', G.hot);
   }
 
   // ---------- update ----------
-  const pivot = () => [G.x - 2, -186 + G.bob];
+  const pivot = () => LV === 1 ? [G.x - 2, -186 + G.bob] : [G.x - 44 * BS, G.y - 4 * BS];
   function update(dt) {
     t += dt;
     const dist = startX - G.x;
 
-    // walking
-    let dir = walkBtn || ((keys.a || keys.arrowleft) ? -1 : (keys.d || keys.arrowright) ? 1 : 0);
-    G.walk = dir;
-    if (dir) { G.x += dir * 72 * dt; G.phase += dt * 6; }
-    for (const b of buildings) if (!b.dead && b.x < G.x + 60 && b.x + b.w > G.x - 22) G.x = b.x + b.w + 22;
-    G.bob = G.walk ? Math.abs(Math.sin(G.phase)) * -3 : Math.sin(t * 2) * 1.2;
+    if (LV === 1) {
+      // walking
+      const dir = walkBtn || ((keys.a || keys.arrowleft) ? -1 : (keys.d || keys.arrowright) ? 1 : 0);
+      G.walk = dir;
+      if (dir) { G.x += dir * 72 * dt; G.phase += dt * 6; }
+      for (const b of buildings) if (!b.dead && b.x < G.x + 60 && b.x + b.w > G.x - 22) G.x = b.x + b.w + 22;
+      G.bob = G.walk ? Math.abs(Math.sin(G.phase)) * -3 : Math.sin(t * 2) * 1.2;
+    } else {
+      // flying: always forward, player steers up/down
+      const dir = walkBtn || ((keys.w || keys.arrowup) ? -1 : (keys.s || keys.arrowdown) ? 1 : 0);
+      G.x -= (62 + Math.min(dist / 60, 40)) * dt;
+      G.vy += (dir * 190 - G.vy) * Math.min(1, dt * 5);
+      G.y += G.vy * dt;
+      G.y = Math.max(-(VH - GR - 40), Math.min(-80, G.y));
+      G.tilt = G.vy * .0012;
+      G.phase += dt * (dir < 0 ? 12 : 7);
+      for (const b of buildings) {
+        if (!b.dead && b.x < G.x + 140 && b.x + b.w > G.x - 110 && -b.h < G.y + 50) {
+          G.hp -= 28 * dt; G.hurt = .1; G.y -= 120 * dt;
+          b.hp -= b.max * .5 * dt; b.burn = Math.min(1, b.burn + dt);
+          if (Math.random() < dt * 20) debris(G.x - 40 + Math.random() * 100, G.y + 35);
+          shake = Math.max(shake, 4);
+        }
+      }
+    }
 
-    camX += (G.x - VW * .66 - camX) * Math.min(1, dt * 4);
+    camX += (G.x - VW * camK() - camX) * Math.min(1, dt * 4);
     genCity();
 
     // aim + fire
@@ -350,7 +408,8 @@
       const [wx, wy] = toWorld(tgt[0], tgt[1]);
       const dx = wx - px, dy = wy - py;
       let th = Math.atan2(-dy, -dx);
-      if (th > 1.35 || th < -.75) th = dy < 0 ? 1.35 : -.75;
+      const hi = LV === 1 ? 1.35 : 1.1, lo = LV === 1 ? -.75 : -1.1;
+      if (th > hi || th < lo) th = dy < 0 ? hi : lo;
       G.aim += (th - G.aim) * Math.min(1, dt * 14);
     }
     const want = ptr.size > 0 || keys[' '];
@@ -362,7 +421,8 @@
 
     if (G.firing) {
       const ca = Math.cos(G.aim), sa = Math.sin(G.aim);
-      const mx = px + (-54 * ca), my = py + (-54 * sa) + 4;
+      const mo = LV === 1 ? 54 : 46 * BS * HS;
+      const mx = px + (-mo * ca), my = py + (-mo * sa) + 4;
       emitAcc += dt * 240;
       while (emitAcc > 1) {
         emitAcc--;
@@ -397,6 +457,20 @@
       } else if (Math.random() < dt * .8) smoke(b.x + Math.random() * b.w, -8, .8);
     }
 
+    // little people: roof wavers float down with an umbrella, then run away
+    for (const b of buildings) {
+      if (b.guy && (b.dead || b.burn > .2)) { b.guy = false; people.push({ k: 1, x: b.x + b.w / 2, y: -b.h, vx: -12 - Math.random() * 14, id: uid++ }); }
+      if (!b.fled && b.burn > 0) {
+        b.fled = true;
+        for (let i = 0, n = 1 + (R(b.id * 4.1) * 2 | 0); i < n; i++) people.push({ k: 2, x: b.x + Math.random() * b.w, y: 0, vx: -(50 + Math.random() * 40), id: uid++ });
+      }
+    }
+    for (const q of people) {
+      if (q.k === 1) { q.y += 38 * dt; q.x += q.vx * dt; if (q.y >= 0) { q.y = 0; q.k = 2; q.vx = -(55 + Math.random() * 35); } }
+      else q.x += q.vx * dt;
+    }
+    people = people.filter(q => q.x > camX - 60);
+
     // helicopters
     heliT -= dt;
     const maxHeli = Math.min(6, 2 + Math.floor(dist / 600));
@@ -406,9 +480,23 @@
         helis.push({ id: uid++, x: camX - 60, y: -(200 + Math.random() * 200), tx: 0, ty: 0, re: 0, shoot: 1.5 + Math.random(), fall: false, vx: 0, vy: 0, rot: 0 });
       }
     }
+    if (LV === 2 && (jetT -= dt) <= 0) {
+      jetT = Math.max(2.5, 7 - dist / 600) * (.7 + Math.random() * .6);
+      helis.push({ id: uid++, jet: true, x: camX - 80, y: G.y + (Math.random() - .5) * 160, shots: 2, shoot: .6, fall: false, vx: 0, vy: 0, rot: 0 });
+    }
     const topY = Math.min(VH - GR - 60, 470);
+    const [aimX, aimY] = LV === 1 ? [G.x + 20, -140] : [G.x + 10, G.y];
     for (const h of helis) {
-      if (!h.fall) {
+      if (h.jet && !h.fall) {
+        h.x += 250 * dt; h.y += Math.sin(t * 2 + h.id) * 20 * dt;
+        if (h.x > camX + 30 && h.shots > 0 && (h.shoot -= dt) <= 0) {
+          h.shots--; h.shoot = .35;
+          const dx = aimX - h.x, dy = aimY - h.y, L = Math.hypot(dx, dy) || 1;
+          bullets.push({ x: h.x + 20, y: h.y, vx: dx / L * 330, vy: dy / L * 330 });
+          blip();
+        }
+        if (h.x > camX + VW + 120) h.dead = true;
+      } else if (!h.fall) {
         h.re -= dt;
         if (h.re <= 0) { h.re = 2 + Math.random() * 2; h.tx = camX + VW * (.06 + Math.random() * .42); h.ty = -(170 + Math.random() * (topY - 170)); }
         h.x += (h.tx - h.x) * Math.min(1, dt * .9);
@@ -416,7 +504,7 @@
         h.shoot -= dt;
         if (h.shoot <= 0) {
           h.shoot = Math.max(1, 2.4 - dist / 1500) * (.7 + Math.random() * .6);
-          const ax = G.x + 20 + (Math.random() - .5) * 40, ay = -140 + (Math.random() - .5) * 80;
+          const ax = aimX + (Math.random() - .5) * 40, ay = aimY + (Math.random() - .5) * (LV === 1 ? 80 : 30);
           const dx = ax - h.x, dy = ay - h.y, L = Math.hypot(dx, dy) || 1, v = 250;
           bullets.push({ x: h.x + 16, y: h.y + 4, vx: dx / L * v, vy: dy / L * v });
           blip();
@@ -432,11 +520,13 @@
     // bullets
     for (const u of bullets) {
       u.x += u.vx * dt; u.y += u.vy * dt;
-      if (u.x > G.x - 18 && u.x < G.x + 70 && u.y > -206 + G.bob && u.y < 0) {
+      const hit = LV === 1 ? (u.x > G.x - 18 && u.x < G.x + 70 && u.y > -206 + G.bob && u.y < 0)
+        : (u.x > G.x - 125 && u.x < G.x + 160 && u.y > G.y - 34 && u.y < G.y + 36);
+      if (hit) {
         u.dead = true; G.hp -= 4; G.hurt = .22; buzz(25);
         for (let i = 0; i < 5; i++) parts.push({ k: 3, x: u.x, y: u.y, vx: (Math.random() - .5) * 160, vy: -Math.random() * 120, l: 0, L: .4, r: 1.5, rot: 0 });
       }
-      if (u.y > 10 || u.x > camX + VW + 50) u.dead = true;
+      if (u.y > 10 || u.y < -VH || u.x > camX + VW + 50) u.dead = true;
     }
     bullets = bullets.filter(u => !u.dead);
     G.hurt = Math.max(0, G.hurt - dt);
@@ -456,9 +546,9 @@
             }
           }
           if (p.dmg) for (const h of helis) {
-            if (!h.fall && Math.abs(p.x - h.x) < 24 && Math.abs(p.y - h.y) < 16) {
-              h.fall = true; h.vx = (Math.random() - .5) * 80; h.vy = -40;
-              score += 500; hudDirty = true; boom(.5, .5); buzz(30);
+            if (!h.fall && Math.abs(p.x - h.x) < 26 && Math.abs(p.y - h.y) < 16) {
+              h.fall = true; h.vx = h.jet ? 160 : (Math.random() - .5) * 80; h.vy = -40;
+              score += h.jet ? 800 : 500; hudDirty = true; boom(.5, .5); buzz(30);
               p.dmg = 0; break;
             }
           }
@@ -472,6 +562,7 @@
 
     shake = Math.max(0, shake - dt * 20);
     if (G.hp <= 0) gameOver();
+    else if (LV === 1 && kills >= GOAL) levelUp();
   }
 
   // ---------- draw ----------
@@ -592,7 +683,72 @@
     cx.restore();
   }
 
+  function drawWing(sx, sy, sc, alpha) {
+    cx.save(); cx.translate(sx, sy); cx.scale(1, sc); cx.globalAlpha = alpha;
+    fillPoly(WING);
+    cx.beginPath(); pl(WING, true, 1);
+    ln(30, -60, 92, -110, .6); ln(30, -60, 70, -70, .6); ln(30, -60, 50, -36, .6);
+    cx.stroke(); cx.restore();
+  }
+
+  function drawBird() {
+    sd = 11;
+    const ws = Math.max(-.6, Math.cos(G.phase));
+    cx.save(); cx.translate(G.x, G.y); cx.rotate(G.tilt); cx.scale(BS, BS);
+    cx.strokeStyle = G.hurt > 0 ? '#c62d1a' : INK; cx.fillStyle = PAPER; cx.lineWidth = 1.6;
+    drawWing(60, -18, ws * .85, .55);                       // far wing
+    cx.beginPath();                                          // leg with open talons + little arm
+    ln(40, 14, 54, 40, .8); ln(54, 40, 60, 54, .8);
+    ln(60, 54, 46, 70, .8); ln(60, 54, 62, 76, .8); ln(60, 54, 78, 66, .8);
+    ln(-26, 10, -36, 28, .6); ln(-36, 28, -48, 30, .5); ln(-36, 28, -44, 38, .5); ln(-36, 28, -34, 40, .5);
+    cx.stroke();
+    fillPoly(BBODY); cx.beginPath(); pl(BBODY, true, 1.1); ln(-30, 4, 80, 8, .8); ln(118, -4, 150, 0, .6); cx.stroke();
+    for (const [x, h] of SPINES) {                           // curved crest spines
+      const by = x > 20 ? -24 + (x - 20) * .15 : -22 - (x + 20) * .05;
+      cx.beginPath(); cx.moveTo(x - 5, by + 2); cx.quadraticCurveTo(x - 2, by - h * .6, x + 10, by - h);
+      cx.quadraticCurveTo(x + 3, by - h * .5, x + 6, by + 2); cx.fill();
+      cx.beginPath(); cx.moveTo(x - 5 + J(1), by + 2); cx.quadraticCurveTo(x - 2 + J(2), by - h * .6, x + 10 + J(1), by - h);
+      cx.quadraticCurveTo(x + 3 + J(2), by - h * .5, x + 6, by + 2); cx.stroke();
+    }
+    drawWing(52, -20, ws, 1);                                // near wing
+    cx.translate(-44, -4); cx.rotate(G.aim - G.tilt); cx.scale(HS, HS); cx.lineWidth = 1.6 / (BS * HS) * 1.2;
+    const hd = BHEAD(G.jaw);
+    fillPoly(hd); cx.beginPath(); pl(hd, true, .7); cx.stroke();
+    cx.beginPath(); cx.arc(-2, -7, 4, 0, Math.PI * 2); ln(-5, -4, 1, -10, .3); cx.stroke();
+    cx.restore();
+  }
+
+  function drawGuy(x, y, ph, mode) {
+    cx.beginPath();
+    cx.moveTo(x + 2.6, y - 13); cx.arc(x, y - 13, 2.6, 0, Math.PI * 2);
+    cx.moveTo(x, y - 10.4); cx.lineTo(x, y - 5);
+    const sw = mode === 2 ? Math.sin(ph) * 3.5 : 0;
+    cx.moveTo(x, y - 5); cx.lineTo(x - 2 - sw, y); cx.moveTo(x, y - 5); cx.lineTo(x + 2 + sw, y);
+    const wave = mode === 0 ? Math.sin(ph) * 2 : 0;          // 0 waving on roof, 1 umbrella, 2 running
+    cx.moveTo(x, y - 9); cx.lineTo(x - 4, y - 14 + wave); cx.moveTo(x, y - 9); cx.lineTo(x + 4, y - 14 - wave);
+    if (mode === 1) { cx.moveTo(x + 4, y - 14); cx.lineTo(x + 4, y - 24); cx.moveTo(x + 14, y - 24); cx.arc(x + 4, y - 24, 10, 0, Math.PI, true); }
+    cx.stroke();
+  }
+  function drawPeople() {
+    cx.strokeStyle = INK; cx.lineWidth = 1;
+    for (const b of buildings) if (b.guy && !b.dead && b.x < camX + VW && b.x + b.w > camX) drawGuy(b.x + b.w / 2, -b.h + b.slant / 2, t * 10 + b.id, 0);
+    for (const q of people) drawGuy(q.x, q.y, t * 14 + q.id, q.k);
+  }
+
+  function drawJet(h) {
+    cx.save(); cx.translate(h.x, h.y); if (h.fall) cx.rotate(h.rot * .5);
+    const pts = [[-26, -3], [14, -4], [28, 0], [14, 4], [-26, 3]];
+    cx.fillStyle = PAPER; cx.strokeStyle = INK; cx.lineWidth = 1.4;
+    fillPoly(pts); cx.beginPath(); pl(pts, true, .6);
+    ln(-4, 0, -16, 14, .5); ln(-16, 14, -10, 14, .5); ln(-22, -2, -30, -12, .5); ln(-30, -12, -24, -12, .5);
+    ln(8, -3, 14, -1, .3);
+    cx.stroke();
+    if (!h.fall) { cx.globalAlpha = .4; cx.beginPath(); ln(-30, 0, -60, 0, 1); cx.stroke(); cx.globalAlpha = 1; }
+    cx.restore();
+  }
+
   function drawHeli(h) {
+    if (h.jet) return drawJet(h);
     sd = h.id * 13;
     cx.save(); cx.translate(h.x, h.y); if (h.fall) cx.rotate(h.rot);
     cx.fillStyle = PAPER; cx.strokeStyle = INK; cx.lineWidth = 1.4;
@@ -648,8 +804,9 @@
     drawSkyline();
     drawGround();
     for (const b of buildings) if (b.x < camX + VW + 20 && b.x + b.w > camX - 60) drawBuilding(b);
+    drawPeople();
     for (const h of helis) drawHeli(h);
-    drawGodzilla();
+    if (LV === 1) drawGodzilla(); else drawBird();
     drawParts();
     drawBullets();
   }
@@ -660,23 +817,49 @@
   const showBest = () => { $('best').textContent = best ? `Record: ${fmt(best)} punti` : ''; };
   showBest();
 
-  function start() {
-    initAudio(); reset(); running = true; roar(); buzz(80);
+  let carry = null, hintT;
+  function banner(txt) {
+    const b = $('banner'); b.hidden = true; b.textContent = txt;
+    void b.offsetWidth; b.hidden = false;
+    setTimeout(() => { b.hidden = true; }, 2200);
+  }
+  function start(lv) {
+    const keep = lv === 2 && carry ? carry : 0;
+    carry = null;
+    initAudio(); reset(lv, keep); running = true; roar(); buzz(80);
+    const up = LV === 2;
+    $('bl').innerHTML = up ? '&uarr;' : '&larr;'; $('br').innerHTML = up ? '&darr;' : '&rarr;';
+    $('bl').setAttribute('aria-label', up ? 'Vola in alto' : 'Cammina a sinistra');
+    $('br').setAttribute('aria-label', up ? 'Vola in basso' : 'Cammina a destra');
+    $('hint').textContent = up ? '↑ ↓ per volare · tieni premuto: fuoco' : 'tieni premuto per sputare fuoco';
     $('menu').hidden = true; $('hint').hidden = false;
-    setTimeout(() => { $('hint').hidden = true; }, 5000);
+    banner(up ? "L'UCCELLONE!" : 'GODZILLA!');
+    clearTimeout(hintT); hintT = setTimeout(() => { $('hint').hidden = true; }, 5000);
+  }
+  function stopFire() {
+    G.firing = false;
+    if (AC && fireGain) { fireGain.gain.setTargetAtTime(0, AC.currentTime, .05); fireOnSnd = false; }
+  }
+  function levelUp() {
+    running = false; stopFire(); carry = score; roar(); buzz([60, 40, 60]);
+    banner('CITTÀ DISTRUTTA!');
+    setTimeout(() => {
+      $('res').textContent = `Livello 1 superato: ${fmt(score)} punti. Ora vola l'Uccellone!`;
+      $('play1').innerHTML = 'Rigioca 1<small>Godzilla</small>';
+      $('menu').hidden = false; $('play2').focus();
+    }, 1600);
   }
   function gameOver() {
-    running = false; G.firing = false;
-    if (AC && fireGain) { fireGain.gain.setTargetAtTime(0, AC.currentTime, .05); fireOnSnd = false; }
+    running = false; stopFire(); carry = null;
     if (score > best) { best = score; try { localStorage.setItem('gz-best', best); } catch (e) {} }
     boom(1.2, 1.6); buzz([80, 60, 160]);
     setTimeout(() => {
-      $('res').textContent = `K.O.! ${fmt(score)} punti · ${kills} palazzi`;
-      $('play').textContent = 'Rigioca';
+      $('res').textContent = `K.O. al livello ${LV}! ${fmt(score)} punti`;
       showBest(); $('menu').hidden = false;
     }, 900);
   }
-  $('play').addEventListener('click', start);
+  $('play1').addEventListener('click', () => start(1));
+  $('play2').addEventListener('click', () => start(2));
 
   reset();
   $('hint').hidden = true;
@@ -684,7 +867,7 @@
   function frame(now) {
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     if (running) update(dt);
-    else { t += dt; G.bob = Math.sin(t * 2) * 1.2; if (!G.firing) G.jaw *= .9; }
+    else { t += dt; G.jaw *= .9; if (LV === 1) G.bob = Math.sin(t * 2) * 1.2; else G.phase += dt * 5; }
     render();
     hud();
     requestAnimationFrame(frame);
