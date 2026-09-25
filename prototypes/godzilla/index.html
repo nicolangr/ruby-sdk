@@ -37,6 +37,7 @@
   .score small { display: block; font-size: 18px; color: var(--ink-soft); letter-spacing: .04em; }
   .bars { display: grid; gap: 6px; width: min(42vw, 190px); }
   .bar { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 6px; font-size: 19px; font-weight: 700; }
+  .bar em { font-style: normal; font-variant-numeric: tabular-nums; }
   .bar span {
     height: 12px; border: 2px solid var(--ink);
     border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
@@ -57,7 +58,18 @@
     border-radius: 60% 40% 55% 45% / 45% 55% 45% 55%;
     touch-action: none;
   }
-  #pad button.on { background: var(--ink); color: var(--paper); }
+  #pad button.on, #act button.on { background: var(--ink); color: var(--paper); }
+  #act {
+    position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    display: flex; gap: 12px;
+  }
+  #act button {
+    min-width: 84px; height: 72px; padding: 0 10px; font: 700 28px/1 Caveat, cursive; color: var(--ink);
+    background: rgba(247, 246, 241, .8); border: 2.5px solid var(--fire);
+    border-radius: 55% 45% 60% 40% / 50% 45% 55% 50%;
+    touch-action: none;
+  }
+  #hint.up { top: calc(env(safe-area-inset-top, 0px) + 96px); bottom: auto; }
   #hint {
     position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
     font-size: 20px; color: var(--ink-soft); pointer-events: none; text-align: right; max-width: 45vw;
@@ -72,6 +84,7 @@
     border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
     padding: 22px 26px 24px; max-width: 360px; width: 100%; box-sizing: border-box;
     text-align: center; box-shadow: 6px 7px 0 rgba(29, 34, 54, .12);
+    max-height: 100%; overflow: auto;
   }
   .card h1 { margin: 0; font-size: 64px; line-height: .85; letter-spacing: .02em; text-wrap: balance; }
   .card h1 em { font-style: normal; color: var(--fire); }
@@ -113,7 +126,7 @@
 <div id="hud">
   <div class="score"><b id="sc">0</b><small>punti · <span id="kills">0</span></small></div>
   <div class="bars">
-    <div class="bar">vita<span><i id="hpb"></i></span></div>
+    <div class="bar"><em id="hpl">vita</em><span><i id="hpb"></i></span></div>
     <div class="bar">fuoco<span><i id="enb"></i></span></div>
   </div>
 </div>
@@ -121,6 +134,10 @@
 <div id="pad">
   <button id="bl" aria-label="Cammina a sinistra">&larr;</button>
   <button id="br" aria-label="Cammina a destra">&rarr;</button>
+</div>
+<div id="act" hidden>
+  <button id="bp" aria-label="Pugno">pugno</button>
+  <button id="bg" aria-label="Abbassati e prendi un omino">prendi</button>
 </div>
 <div id="hint">tieni premuto per sputare fuoco</div>
 <div id="banner" hidden></div>
@@ -133,12 +150,14 @@
     <ul>
       <li>Tieni il dito sullo schermo: il fuoco va dove tocchi.</li>
       <li>Livello 1: Godzilla cammina con le frecce. Distruggi 12 palazzi.</li>
-      <li>Livello 2: l'Uccellone vola da solo, tu lo guidi su e giù. Non sbattere contro i palazzi.</li>
+      <li>Livello 2: l'Uccellone vola da solo, tu lo guidi su e giù. Distruggi 15 palazzi senza sbatterci contro.</li>
+      <li>Livello 3: Godzilla di lava sul fiume. Affonda 8 navi col getto di lava e i pugni, abbassati per prendere e mangiare gli omini. Attento agli uccelli‑elicottero: -100!</li>
       <li>Abbatti elicotteri e jet prima che abbattano te.</li>
     </ul>
     <div class="lv">
       <button class="play" id="play1">Livello 1<small>Godzilla</small></button>
       <button class="play alt" id="play2">Livello 2<small>Uccellone</small></button>
+      <button class="play" id="play3">Livello 3<small>Godzilla di lava</small></button>
     </div>
     <p id="best"></p>
   </div>
@@ -151,14 +170,16 @@
   const PAPER = '#f7f6f1', INK = '#1d2236';
 
   // ---------- viewport ----------
-  let W, H, DPR, S, VW, VH, GR;
+  let W, H, DPR, S, VW, VH, GR, GR0, GRX = 0;
+  const WL = 30, SH = 1.45; // SH: vertical scale of warships // river waterline (level 3), below the bank at y = 0
   function resize() {
     DPR = Math.min(2, window.devicePixelRatio || 1);
     W = innerWidth; H = innerHeight;
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
     S = Math.min(H / 560, W / 480);
     VW = W / S; VH = H / S;
-    GR = Math.max(46, (VH - 560) * 0.5 + 46); // ground band height (taller in portrait)
+    GR0 = Math.max(46, (VH - 560) * 0.5 + 46); // ground band height (taller in portrait)
+    GR = GR0 + GRX;                             // level 3 adds the river band
   }
   addEventListener('resize', resize);
   resize();
@@ -207,6 +228,10 @@
   })();
   const HEAD = jaw => [[12, -14], [-26, -25], [-63, -21], [-61, -9], [-18, -3], [-52, 6 + jaw], [-49, 15 + jaw], [-8, 18], [13, 8]];
 
+  // lava cracks inside Godzilla's body (level 3)
+  const CRACKS = [[[-2, -160], [8, -138], [0, -116], [12, -92], [4, -70]], [[22, -150], [34, -128], [26, -104], [38, -84]],
+    [[10, -60], [24, -44], [18, -24], [30, -8]], [[52, -50], [74, -34], [96, -22], [124, -6]], [[24, -178], [30, -156], [40, -134]]];
+
   // ---------- Uccellone model (faces left, centre at 0,0) — from the second sketch ----------
   const zig = (a, b, n, off) => {
     const out = [];
@@ -227,19 +252,23 @@
   // ---------- state ----------
   let G, buildings, helis, parts, bullets, people, score, kills, running = false, t = 0, shake = 0;
   let camX = 0, nextBx, heliT, jetT, emitAcc, uid = 1, startX, LV = 1;
-  const GOAL = 12;
+  let ships = [], sunk = 0, eaten = 0, shipT = 0, walkT = 0;
+  const GOAL = 12, GOAL2 = 15, GOAL3 = 8;
   const keys = {}, ptr = new Map();
   let walkBtn = 0, aimPt = null;
 
-  const camK = () => LV === 1 ? .66 : .6;
+  const camK = () => LV === 2 ? .6 : .66;
   function reset(lv = LV, keepScore = 0) {
     LV = lv;
-    G = { x: 0, y: -Math.min(300, (VH - GR) * .5), vy: 0, tilt: 0, bob: 0, walk: 0, phase: 0, aim: LV === 1 ? .5 : .15,
-      hp: 100, en: 100, hot: false, hurt: 0, firing: false, jaw: 0 };
+    GRX = LV === 3 ? 130 : 0; GR = GR0 + GRX;
+    const maxHp = LV === 3 ? 1000 : 100;
+    G = { maxHp, lean: 0, act: null, actT: 0, held: null, hitDone: false, x: 0, y: -Math.min(300, (VH - GR) * .5), vy: 0, tilt: 0, bob: 0, walk: 0, phase: 0, aim: LV === 1 ? .5 : .15,
+      hp: maxHp, en: 100, hot: false, hurt: 0, firing: false, jaw: 0 };
     startX = 0;
     camX = G.x - VW * camK();
     buildings = []; helis = []; parts = []; bullets = []; people = [];
-    score = keepScore; kills = 0; heliT = 4; jetT = 7; emitAcc = 0; shake = 0;
+    ships = []; sunk = 0; eaten = 0; shipT = 1; walkT = 0;
+    score = keepScore; kills = 0; heliT = LV === 3 ? 6 : 4; jetT = 7; emitAcc = 0; shake = 0;
     nextBx = G.x - 120;
     genCity();
     hudDirty = true;
@@ -305,6 +334,15 @@
       o.connect(f); o.start(n); o.stop(n + 1.5);
     });
   }
+  function tone(type, f0, f1, dur, vol) {
+    if (!AC) return;
+    const n = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, n); o.frequency.exponentialRampToValueAtTime(f1, n + dur);
+    g.gain.setValueAtTime(vol, n); g.gain.exponentialRampToValueAtTime(.001, n + dur);
+    o.connect(g).connect(master); o.start(n); o.stop(n + dur + .05);
+  }
+  const chomp = () => { tone('square', 110, 60, .12, .18); setTimeout(() => tone('square', 100, 55, .12, .18), 140); };
+  const screech = () => tone('sawtooth', 1100, 380, .35, .08);
   const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
 
   // ---------- particles ----------
@@ -319,6 +357,9 @@
   function debris(x, y) {
     const a = -Math.PI * Math.random(), v = 60 + Math.random() * 200;
     parts.push({ k: 3, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, l: 0, L: .8 + Math.random() * .6, r: 2 + Math.random() * 4, rot: Math.random() * 6 });
+  }
+  function pop(x, y, txt, col = '#f2551d') {
+    parts.push({ k: 4, x, y, vx: 0, vy: -45, l: 0, L: 1.1, r: 0, txt, col });
   }
   function smoke(x, y, s = 1) {
     parts.push({ k: 2, x, y, vx: (Math.random() - .5) * 20 - 8, vy: -30 - Math.random() * 30, l: 0, L: 1.6 + Math.random(), r: 5 * s });
@@ -348,6 +389,13 @@
     const stop = () => { if (walkBtn === d) walkBtn = 0; b.classList.remove('on'); };
     b.addEventListener('pointerup', stop); b.addEventListener('pointercancel', stop); b.addEventListener('lostpointercapture', stop);
   });
+  [['bp', 'punch'], ['bg', 'grab']].forEach(([id, a]) => {
+    const b = $(id);
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault(); initAudio(); startAct(a);
+      b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 180);
+    });
+  });
   addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key === ' ') e.preventDefault(); });
   addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
@@ -355,29 +403,158 @@
   let hudDirty = true, lastHud = '';
   const fmt = n => Math.round(n).toLocaleString('it-IT');
   function hud() {
-    const s = `${score}|${kills}|${G.hp | 0}|${G.en | 0}|${G.hot}`;
+    const s = `${score}|${kills}|${sunk}|${eaten}|${G.hp | 0}|${G.en | 0}|${G.hot}`;
     if (s === lastHud && !hudDirty) return;
     lastHud = s; hudDirty = false;
     $('sc').textContent = fmt(score);
-    $('kills').textContent = LV === 1 ? `${kills}/${GOAL} palazzi` : `${kills} palazzi · liv. 2`;
-    $('hpb').style.width = Math.max(0, G.hp) + '%';
+    $('kills').textContent = LV === 1 ? `${kills}/${GOAL} palazzi` : LV === 2 ? `${kills}/${GOAL2} palazzi · liv. 2`
+      : `${sunk}/${GOAL3} navi · ${eaten} omini`;
+    $('hpb').style.width = Math.max(0, G.hp / G.maxHp * 100) + '%';
+    $('hpl').textContent = LV === 3 ? Math.max(0, Math.ceil(G.hp)) : 'vita';
     $('enb').style.width = G.en + '%';
     $('enb').classList.toggle('hot', G.hot);
   }
 
   // ---------- update ----------
-  const pivot = () => LV === 1 ? [G.x - 2, -186 + G.bob] : [G.x - 44 * BS, G.y - 4 * BS];
+  // point in Godzilla's body frame -> world (body leans forward around the feet)
+  const rotL = (x, y) => { const c = Math.cos(-G.lean), s = Math.sin(-G.lean); return [G.x + x * c - y * s, x * s + y * c]; };
+  const pivot = () => LV === 2 ? [G.x - 44 * BS, G.y - 4 * BS] : rotL(-2, -186 + G.bob);
+  const mouthPos = () => {
+    const [px, py] = pivot(), mo = LV !== 2 ? 54 : 46 * BS * HS;
+    return [px - mo * Math.cos(G.aim), py - mo * Math.sin(G.aim) + 4];
+  };
+  const lerp2 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+
+  // ---------- level 3: punch and grab ----------
+  function startAct(a) {
+    if (LV !== 3 || !running || G.act) return;
+    G.act = a; G.actT = 0; G.hitDone = false;
+    if (a === 'punch') tone('triangle', 300, 90, .15, .15);
+  }
+  function handPos() {
+    const sh = rotL(-8, -122 + G.bob);
+    if (G.act === 'punch') { const e = Math.sin(Math.min(1, G.actT / .35) * Math.PI); return [sh[0] - 95 * e, sh[1] + 110 * e]; }
+    if (G.act === 'grab') {
+      const k = G.actT / .95, gnd = [G.x - 100, -4];
+      if (k < .4) return lerp2([sh[0] - 10, sh[1] + 10], gnd, k / .4);
+      if (k < .6) return gnd;
+      return lerp2(gnd, mouthPos(), Math.min(1, (k - .6) / .35));
+    }
+    return null;
+  }
+  function doPunch() {
+    const x0 = G.x - 150, x1 = G.x - 20;
+    let hit = false;
+    for (const sh of ships) if (!sh.sink && sh.x < x1 && sh.x + sh.w > x0) {
+      sh.hp -= 35; hit = true; score += 300; G.hp = Math.min(G.maxHp, G.hp + 20);
+      pop(sh.x + sh.w / 2, -6, '+300');
+      for (let i = 0; i < 6; i++) debris(sh.x + sh.w / 2, WL - 20);
+    }
+    for (const b of buildings) if (!b.dead && b.x < x1 && b.x + b.w > x0 - 20) {
+      b.hp -= b.max * .35; b.burn = Math.min(1, b.burn + .2); hit = true;
+      for (let i = 0; i < 5; i++) debris(b.x + b.w, -Math.random() * b.h * .5);
+    }
+    const [fx, fy] = handPos();
+    for (const h of helis) if (!h.fall && Math.hypot(h.x - fx, h.y - fy) < 80) {
+      h.fall = true; h.vx = -120; h.vy = -60; score += 600; pop(h.x, h.y - 20, '+600'); hit = true;
+    }
+    if (hit) { shake = 8; boom(.6, .35); buzz(40); hudDirty = true; }
+  }
+  function grab() {
+    let pick = null, bd = 1e9;
+    for (const q of people) if (q.k === 2) { const d = Math.abs(q.x - (G.x - 100)); if (d < 62 && d < bd) { bd = d; pick = q; } }
+    if (pick) { people.splice(people.indexOf(pick), 1); G.held = pick; }
+  }
+  function eat() {
+    G.held = null; eaten++; score += 250; G.hp = Math.min(G.maxHp, G.hp + 50);
+    const m = mouthPos(); pop(m[0], m[1] - 24, 'GNAM! +250'); chomp(); buzz(30); hudDirty = true; G.jaw = 14;
+  }
+  function updateActions(dt) {
+    if (keys.j) startAct('punch'); if (keys.k) startAct('grab');
+    if (!G.act) { G.lean += (0 - G.lean) * Math.min(1, dt * 10); return; }
+    G.actT += dt;
+    if (G.act === 'punch') {
+      const k = G.actT / .35; G.lean = .25 * Math.sin(Math.min(1, k) * Math.PI);
+      if (k >= .5 && !G.hitDone) { G.hitDone = true; doPunch(); }
+      if (k >= 1) G.act = null;
+    } else {
+      const k = G.actT / .95;
+      G.lean = .6 * (k < .35 ? k / .35 : k < .6 ? 1 : Math.max(0, 1 - (k - .6) / .4));
+      if (k >= .4 && !G.hitDone) { G.hitDone = true; grab(); }
+      if (k >= 1) { if (G.held) eat(); G.act = null; }
+    }
+  }
+
+  // ---------- level 3: warships on the river ----------
+  function updateShips(dt) {
+    if ((shipT -= dt) <= 0 && ships.filter(q => !q.sink).length < 2 + Math.min(2, sunk / 3 | 0)) {
+      shipT = 3 + Math.random() * 3;
+      const fromLeft = Math.random() < .7, w = 105 + Math.random() * 50;
+      ships.push({ id: uid++, w, dir: fromLeft ? 1 : -1, x: fromLeft ? camX - w - 20 : camX + VW + 20, v: 26 + Math.random() * 22,
+        hp: 100, sink: 0, shoot: 2 + Math.random() * 2, burn: 0 });
+    }
+    for (const q of ships) {
+      if (q.sink) {
+        q.sink = Math.min(1, q.sink + dt / 2);
+        if (Math.random() < dt * 14) smoke(q.x + q.w / 2 + (Math.random() - .5) * q.w, WL - 10, 1);
+        if (q.sink >= 1) q.dead = true;
+        continue;
+      }
+      q.x += q.dir * q.v * dt;
+      if (q.burn > 0 && Math.random() < q.burn * dt * 16)
+        parts.push({ k: 1, x: q.x + Math.random() * q.w, y: WL - 14, vx: 0, vy: -40, l: 0, L: .5, r: 5 });
+      if (q.x > camX && q.x + q.w < camX + VW && (q.shoot -= dt) <= 0) {
+        q.shoot = 2.5 + Math.random() * 2.5;
+        const bx = q.x + q.w / 2 + q.dir * q.w * .3, by = WL - 30, dx = G.x + 10 - bx, dy = -120 - by, L = Math.hypot(dx, dy) || 1;
+        bullets.push({ x: bx, y: by, vx: dx / L * 280, vy: dy / L * 280, dmg: 25 });
+        boom(.25, .25);
+      }
+      if (q.hp <= 0) {
+        q.sink = .001; sunk++; score += 1000; hudDirty = true; shake = 8; boom(1, 1.2); buzz(60);
+        pop(q.x + q.w / 2, -10, 'AFFONDATA! +1000');
+        for (let i = 0; i < 10; i++) debris(q.x + Math.random() * q.w, WL - 16);
+      }
+      if (q.x < camX - 400 || q.x > camX + VW + 400) q.dead = true;
+    }
+    ships = ships.filter(q => !q.dead);
+  }
+
+  // ---------- level 3: bird-helicopters dive at Godzilla ----------
+  function bcUpdate(h, dt) {
+    const topY = Math.min(VH - GR - 60, 470);
+    if (h.st === 'hover') {
+      h.re -= dt;
+      if (h.re <= 0) { h.re = 1.5 + Math.random() * 1.5; h.tx = camX + VW * (.08 + Math.random() * .4); h.ty = -(200 + Math.random() * Math.max(10, topY - 200)); }
+      h.x += (h.tx - h.x) * Math.min(1, dt * 1.2); h.y += (h.ty - h.y) * Math.min(1, dt * 1.2);
+      if ((h.wait -= dt) <= 0) {
+        const [hx, hy] = pivot(), dx = hx + 20 - h.x, dy = hy + 30 - h.y, L = Math.hypot(dx, dy) || 1;
+        h.dvx = dx / L * 300; h.dvy = dy / L * 300; h.st = 'dive'; screech();
+      }
+    } else if (h.st === 'dive') {
+      h.x += h.dvx * dt; h.y += h.dvy * dt;
+      const ducked = G.lean > .3 && h.y < -150;
+      if (!ducked && h.x > G.x - 70 && h.x < G.x + 60 && h.y > -225 && h.y < -20) {
+        G.hp -= 100; G.hurt = .5; shake = 12; buzz([60, 30, 60]); boom(.6, .5);
+        pop(h.x, h.y - 24, '-100', '#c62d1a'); h.st = 'back'; hudDirty = true;
+      } else if (h.x > G.x + 120 || h.y > -15) h.st = 'back';
+    } else {
+      const bx = camX + VW * .2, by = -(topY - 40);
+      h.x += (bx - h.x) * Math.min(1, dt * 1.5); h.y += (by - h.y) * Math.min(1, dt * 1.5);
+      if (Math.abs(h.x - bx) < 30) { h.st = 'hover'; h.wait = 2.5 + Math.random() * 2.5; h.re = 0; }
+    }
+  }
   function update(dt) {
     t += dt;
     const dist = startX - G.x;
 
-    if (LV === 1) {
+    if (LV !== 2) {
       // walking
       const dir = walkBtn || ((keys.a || keys.arrowleft) ? -1 : (keys.d || keys.arrowright) ? 1 : 0);
       G.walk = dir;
       if (dir) { G.x += dir * 72 * dt; G.phase += dt * 6; }
       for (const b of buildings) if (!b.dead && b.x < G.x + 60 && b.x + b.w > G.x - 22) G.x = b.x + b.w + 22;
       G.bob = G.walk ? Math.abs(Math.sin(G.phase)) * -3 : Math.sin(t * 2) * 1.2;
+      if (LV === 3) updateActions(dt);
     } else {
       // flying: always forward, player steers up/down
       const dir = walkBtn || ((keys.w || keys.arrowup) ? -1 : (keys.s || keys.arrowdown) ? 1 : 0);
@@ -408,7 +585,7 @@
       const [wx, wy] = toWorld(tgt[0], tgt[1]);
       const dx = wx - px, dy = wy - py;
       let th = Math.atan2(-dy, -dx);
-      const hi = LV === 1 ? 1.35 : 1.1, lo = LV === 1 ? -.75 : -1.1;
+      const hi = LV !== 2 ? 1.35 : 1.1, lo = LV !== 2 ? -.75 : -1.1;
       if (th > hi || th < lo) th = dy < 0 ? hi : lo;
       G.aim += (th - G.aim) * Math.min(1, dt * 14);
     }
@@ -417,17 +594,16 @@
     G.firing = want && !G.hot && G.en > 0;
     if (G.firing) { G.en -= 32 * dt; if (G.en <= 0) { G.en = 0; G.hot = true; } }
     else G.en = Math.min(100, G.en + 24 * dt);
-    G.jaw += ((G.firing ? 9 : 0) - G.jaw) * Math.min(1, dt * 12);
+    G.jaw += ((G.firing || (G.act === 'grab' && G.actT > .55) ? 10 : 0) - G.jaw) * Math.min(1, dt * 12);
 
     if (G.firing) {
-      const ca = Math.cos(G.aim), sa = Math.sin(G.aim);
-      const mo = LV === 1 ? 54 : 46 * BS * HS;
-      const mx = px + (-mo * ca), my = py + (-mo * sa) + 4;
+      const [mx, my] = mouthPos(), lava = LV === 3;
       emitAcc += dt * 240;
       while (emitAcc > 1) {
         emitAcc--;
-        const a = G.aim + (Math.random() - .5) * .26, v = 520 + Math.random() * 200;
-        parts.push({ k: 0, x: mx, y: my, vx: -Math.cos(a) * v, vy: -Math.sin(a) * v, l: 0, L: .45 + Math.random() * .3, r: 3, dmg: 1.6 });
+        const a = G.aim + (Math.random() - .5) * .26, v = (lava ? 470 : 520) + Math.random() * 200;
+        parts.push({ k: 0, x: mx, y: my, vx: -Math.cos(a) * v, vy: -Math.sin(a) * v, l: 0,
+          L: lava ? .9 + Math.random() * .4 : .45 + Math.random() * .3, r: 3, dmg: lava ? 2.2 : 1.6, lava });
       }
     }
     if (AC && fireGain && fireOnSnd !== G.firing) {
@@ -447,7 +623,7 @@
         if (b.hp <= 0) {
           b.dead = true; kills++;
           score += Math.round(b.w * b.h / 10);
-          G.hp = Math.min(100, G.hp + 3);
+          G.hp = Math.min(G.maxHp, G.hp + (LV === 3 ? 20 : 3));
           shake = 9; boom(1, 1.3); buzz(60);
           for (let i = 0; i < 14; i++) debris(b.x + Math.random() * b.w, -Math.random() * b.h);
         }
@@ -465,19 +641,25 @@
         for (let i = 0, n = 1 + (R(b.id * 4.1) * 2 | 0); i < n; i++) people.push({ k: 2, x: b.x + Math.random() * b.w, y: 0, vx: -(50 + Math.random() * 40), id: uid++ });
       }
     }
+    if (LV === 3 && (walkT -= dt) <= 0) {
+      walkT = .9 + Math.random();
+      people.push({ k: 2, x: camX + Math.random() * VW * .6, y: 0, vx: (Math.random() < .5 ? -1 : 1) * (20 + Math.random() * 25), id: uid++ });
+    }
+    if (LV === 3) for (const q of people) if (q.k === 2 && Math.abs(q.x - G.x) < 190 && q.vx > -30) q.vx = -(30 + Math.random() * 22);
     for (const q of people) {
       if (q.k === 1) { q.y += 38 * dt; q.x += q.vx * dt; if (q.y >= 0) { q.y = 0; q.k = 2; q.vx = -(55 + Math.random() * 35); } }
       else q.x += q.vx * dt;
     }
-    people = people.filter(q => q.x > camX - 60);
+    people = people.filter(q => q.x > camX - 60 && q.x < camX + VW + 80);
 
     // helicopters
     heliT -= dt;
-    const maxHeli = Math.min(6, 2 + Math.floor(dist / 600));
+    const maxHeli = LV === 3 ? Math.min(4, 2 + (sunk / 3 | 0)) : Math.min(6, 2 + Math.floor(dist / 600));
     if (heliT <= 0) {
-      heliT = Math.max(2.2, 6 - dist / 700) * (.7 + Math.random() * .6);
+      heliT = LV === 3 ? 5 + Math.random() * 3 : Math.max(2.2, 6 - dist / 700) * (.7 + Math.random() * .6);
       if (helis.filter(h => !h.fall).length < maxHeli) {
-        helis.push({ id: uid++, x: camX - 60, y: -(200 + Math.random() * 200), tx: 0, ty: 0, re: 0, shoot: 1.5 + Math.random(), fall: false, vx: 0, vy: 0, rot: 0 });
+        if (LV === 3) helis.push({ id: uid++, bc: true, st: 'back', x: camX - 60, y: -300, tx: 0, ty: 0, re: 0, wait: 3, fall: false, vx: 0, vy: 0, rot: 0 });
+        else helis.push({ id: uid++, x: camX - 60, y: -(200 + Math.random() * 200), tx: 0, ty: 0, re: 0, shoot: 1.5 + Math.random(), fall: false, vx: 0, vy: 0, rot: 0 });
       }
     }
     if (LV === 2 && (jetT -= dt) <= 0) {
@@ -485,9 +667,10 @@
       helis.push({ id: uid++, jet: true, x: camX - 80, y: G.y + (Math.random() - .5) * 160, shots: 2, shoot: .6, fall: false, vx: 0, vy: 0, rot: 0 });
     }
     const topY = Math.min(VH - GR - 60, 470);
-    const [aimX, aimY] = LV === 1 ? [G.x + 20, -140] : [G.x + 10, G.y];
+    const [aimX, aimY] = LV !== 2 ? [G.x + 20, -140] : [G.x + 10, G.y];
     for (const h of helis) {
-      if (h.jet && !h.fall) {
+      if (h.bc && !h.fall) bcUpdate(h, dt);
+      else if (h.jet && !h.fall) {
         h.x += 250 * dt; h.y += Math.sin(t * 2 + h.id) * 20 * dt;
         if (h.x > camX + 30 && h.shots > 0 && (h.shoot -= dt) <= 0) {
           h.shots--; h.shoot = .35;
@@ -516,14 +699,16 @@
       }
     }
     helis = helis.filter(h => !h.dead && h.x > camX - 300);
+    if (LV === 3) updateShips(dt);
 
     // bullets
     for (const u of bullets) {
       u.x += u.vx * dt; u.y += u.vy * dt;
-      const hit = LV === 1 ? (u.x > G.x - 18 && u.x < G.x + 70 && u.y > -206 + G.bob && u.y < 0)
+      const hit = LV !== 2 ? (u.x > G.x - 18 && u.x < G.x + 70 && u.y > -206 + G.bob && u.y < 0)
         : (u.x > G.x - 125 && u.x < G.x + 160 && u.y > G.y - 34 && u.y < G.y + 36);
       if (hit) {
-        u.dead = true; G.hp -= 4; G.hurt = .22; buzz(25);
+        u.dead = true; G.hp -= u.dmg || 4; G.hurt = .22; buzz(25);
+        if (u.dmg) pop(u.x, u.y - 16, '-' + u.dmg, '#c62d1a');
         for (let i = 0; i < 5; i++) parts.push({ k: 3, x: u.x, y: u.y, vx: (Math.random() - .5) * 160, vy: -Math.random() * 120, l: 0, L: .4, r: 1.5, rot: 0 });
       }
       if (u.y > 10 || u.y < -VH || u.x > camX + VW + 50) u.dead = true;
@@ -536,8 +721,19 @@
     for (const p of parts) {
       p.l += dt; p.x += p.vx * dt; p.y += p.vy * dt;
       if (p.k === 0) {
-        p.vx *= drag; p.vy = p.vy * drag - 50 * dt; p.r = 3 + (p.l / p.L) * 22;
-        if (p.y > 0) { p.y = 0; p.vy *= -.2; p.vx *= .7; }
+        if (p.lava) {
+          const d2 = Math.pow(.55, dt);
+          p.vx *= d2; p.vy = p.vy * d2 + 420 * dt; p.r = 3 + (p.l / p.L) * 14;
+          if (p.y > 0) {
+            if (p.dmg) for (const q of ships) if (!q.sink && p.x > q.x && p.x < q.x + q.w && p.y > WL - 48) {
+              q.hp -= p.dmg * .35; q.burn = Math.min(1, q.burn + .01); p.dmg = 0; p.vx *= .2; p.vy *= .2; break;
+            }
+            if (p.y > WL) { if (Math.random() < .15) smoke(p.x, WL, .6); p.l = p.L; }
+          }
+        } else {
+          p.vx *= drag; p.vy = p.vy * drag - 50 * dt; p.r = 3 + (p.l / p.L) * 22;
+          if (p.y > 0) { p.y = 0; p.vy *= -.2; p.vx *= .7; }
+        }
         if (p.dmg) {
           for (const b of buildings) {
             if (!b.dead && p.x > b.x && p.x < b.x + b.w && p.y > -b.h) {
@@ -548,13 +744,15 @@
           if (p.dmg) for (const h of helis) {
             if (!h.fall && Math.abs(p.x - h.x) < 26 && Math.abs(p.y - h.y) < 16) {
               h.fall = true; h.vx = h.jet ? 160 : (Math.random() - .5) * 80; h.vy = -40;
-              score += h.jet ? 800 : 500; hudDirty = true; boom(.5, .5); buzz(30);
+              const pts = h.jet ? 800 : h.bc ? 600 : 500;
+              score += pts; if (h.bc) pop(h.x, h.y - 20, '+' + pts); hudDirty = true; boom(.5, .5); buzz(30);
               p.dmg = 0; break;
             }
           }
         }
       } else if (p.k === 1) { p.vy -= 30 * dt; p.r *= 1 - dt * .8; }
       else if (p.k === 2) { p.r += dt * 9; p.vx -= 6 * dt; }
+      else if (p.k === 4) { p.vy *= 1 - dt; }
       else { p.vy += 500 * dt; p.rot += dt * 8; if (p.y > 0) { p.y = 0; p.vy *= -.3; p.vx *= .5; } }
     }
     parts = parts.filter(p => p.l < p.L);
@@ -562,7 +760,9 @@
 
     shake = Math.max(0, shake - dt * 20);
     if (G.hp <= 0) gameOver();
-    else if (LV === 1 && kills >= GOAL) levelUp();
+    else if (LV === 1 && kills >= GOAL) levelUp(2);
+    else if (LV === 2 && kills >= GOAL2) levelUp(3);
+    else if (LV === 3 && sunk >= GOAL3) win();
   }
 
   // ---------- draw ----------
@@ -666,18 +866,32 @@
     const sw = G.walk ? Math.sin(G.phase) * 7 : 0, tail = Math.sin(t * 1.7) * 5;
     const body = [[4, -176], [-6, -140], [-10, -96], [-6, -52], [-12 + sw * .3, -20], [-18 + sw, 0], [18 + sw, 0], [22, -24],
       [28 - sw * .6, 0], [54 - sw * .6, 0], [50, -30], [84, -16], [122, -2 + tail * .4], [148, 4 + tail], [116, -14], [88, -44], ...BACK];
-    cx.save(); cx.translate(G.x, G.bob);
-    const ink = G.hurt > 0 ? '#c62d1a' : INK;
+    cx.save(); cx.translate(G.x, 0); cx.rotate(-G.lean); cx.translate(0, G.bob);
+    const ink = G.hurt > 0 ? '#c62d1a' : INK, lava = LV === 3, glow = .55 + Math.sin(t * 4) * .2;
     cx.fillStyle = PAPER; fillPoly(body);
+    if (lava) {
+      cx.fillStyle = '#ff8a1e'; cx.globalAlpha = .85;
+      for (let j = 1; j < BACK.length - 1; j += 2) fillPoly([BACK[j - 1], BACK[j], BACK[j + 1]]);
+      cx.globalAlpha = glow; cx.strokeStyle = '#ffb13b'; cx.lineWidth = 3.4;
+      cx.beginPath(); for (const c of CRACKS) pl(c, false, .6); cx.stroke();
+      cx.globalAlpha = 1; cx.strokeStyle = '#e8401c'; cx.lineWidth = 1.2;
+      cx.beginPath(); for (const c of CRACKS) pl(c, false, .6); cx.stroke();
+    }
     cx.strokeStyle = ink; cx.lineWidth = 1.7; cx.beginPath(); pl(body, true, 1.1);
-    // little arm, as in the sketch
-    ln(-8, -122, -28, -116, .8); ln(-28, -116, -40, -128, .8); ln(-28, -116, -38, -104, .8); ln(-16, -119, -24, -106, .6);
+    // little arm, as in the sketch (replaced by the long arm while punching or grabbing)
+    if (!G.act) { ln(-8, -122, -28, -116, .8); ln(-28, -116, -40, -128, .8); ln(-28, -116, -38, -104, .8); ln(-16, -119, -24, -106, .6); }
     cx.stroke();
     // head
-    cx.translate(-2, -186); cx.rotate(G.aim);
+    cx.translate(-2, -186); cx.rotate(G.aim + G.lean);
+    if (lava) {                                              // curved horn from the third sketch
+      cx.fillStyle = PAPER; cx.beginPath(); cx.moveTo(-14, -22); cx.quadraticCurveTo(-20, -44, -4, -52);
+      cx.quadraticCurveTo(-10, -38, -2, -23); cx.closePath(); cx.fill(); cx.stroke();
+    }
     const hd = HEAD(G.jaw);
     cx.fillStyle = PAPER; fillPoly(hd);
-    cx.beginPath(); pl(hd, true, .9); cx.stroke();
+    cx.beginPath(); pl(hd, true, .9);
+    if (lava) for (const fx of [-50, -40, -30]) { ln(fx, -8, fx + 2, -1, .2); ln(fx + 2, -1, fx + 5, -7, .2); }
+    cx.stroke();
     cx.beginPath(); cx.arc(-24, -15, 2.6, 0, Math.PI * 1.7); cx.stroke();
     cx.beginPath(); ln(-57, -17, -54, -15, .3); cx.stroke();
     cx.restore();
@@ -747,7 +961,92 @@
     cx.restore();
   }
 
+  function drawArm() {
+    const h = handPos();
+    if (!h) return;
+    const sh = rotL(-8, -122 + G.bob), mx = (sh[0] + h[0]) / 2 + 16, my = (sh[1] + h[1]) / 2 + 8;
+    sd = 3;
+    for (const [col, lw] of [[INK, 15], [PAPER, 11]]) {
+      cx.strokeStyle = col; cx.lineWidth = lw; cx.beginPath();
+      cx.moveTo(sh[0], sh[1]); cx.quadraticCurveTo(mx, my, h[0], h[1]); cx.stroke();
+    }
+    cx.strokeStyle = '#e8401c'; cx.lineWidth = 1.2; cx.beginPath(); cx.moveTo(sh[0] - 4, sh[1] + 2); cx.quadraticCurveTo(mx, my, (mx + h[0]) / 2, (my + h[1]) / 2); cx.stroke();
+    cx.strokeStyle = INK; cx.lineWidth = 1.4; cx.beginPath();
+    if (G.act === 'punch') { cx.fillStyle = PAPER; cx.arc(h[0], h[1], 8, 0, Math.PI * 2); cx.fill(); ln(h[0] - 6, h[1] - 2, h[0] + 2, h[1] - 3, .3); }
+    else { ln(h[0], h[1], h[0] - 10, h[1] + 6, .4); ln(h[0], h[1], h[0] - 4, h[1] + 9, .4); ln(h[0], h[1], h[0] + 4, h[1] + 9, .4); }
+    cx.stroke();
+    if (G.held) { cx.lineWidth = 1; drawGuy(h[0] - 2, h[1] + 16, t * 30, 0); }
+  }
+
+  function drawWater() {
+    cx.fillStyle = 'rgba(70,110,170,.10)'; cx.fillRect(camX - 20, 2, VW + 40, GR);
+    cx.strokeStyle = 'rgba(52,71,158,.35)'; cx.lineWidth = 1; cx.beginPath();
+    for (let r = 0; WL + 12 + r * 16 < GR - 4; r++) {
+      const y = WL + 12 + r * 16;
+      for (let x = Math.floor(camX / 60) * 60 - 60 + (r % 2) * 30; x < camX + VW + 60; x += 60) {
+        const o = Math.sin(t * 1.5 + x * .05 + r) * 3;
+        cx.moveTo(x, y + o); cx.quadraticCurveTo(x + 15, y + o - 4, x + 30, y + o);
+      }
+    }
+    cx.stroke();
+  }
+  function drawWaterFront() {
+    cx.strokeStyle = 'rgba(52,71,158,.6)'; cx.lineWidth = 1.3; cx.beginPath();
+    for (let x = Math.floor(camX / 40) * 40 - 40; x < camX + VW + 40; x += 40) {
+      const o = Math.sin(t * 2 + x * .07) * 2;
+      cx.moveTo(x, WL + 3 + o); cx.quadraticCurveTo(x + 20, WL - 1 + o, x + 40, WL + 3 + o);
+    }
+    cx.stroke();
+  }
+
+  function drawShip(q) {
+    sd = q.id * 7;
+    const w = q.w, e = q.sink;
+    cx.save(); cx.translate(q.x + w / 2, WL + e * 40); cx.rotate(e * .25 * q.dir); cx.scale(q.dir, SH);
+    cx.globalAlpha = 1 - e * .7;
+    const hull = [[-w / 2, -10], [w / 2 + 10, -12], [w / 2 - 6, 6], [-w / 2 + 4, 6]];
+    const sup = [[-w * .2, -10], [-w * .2, -24], [w * .1, -24], [w * .1, -10]];
+    const bridge = [[-w * .12, -24], [-w * .12, -33], [w * .04, -33], [w * .04, -24]];
+    const stack = [[-w * .36, -10], [-w * .34, -30], [-w * .26, -30], [-w * .26, -10]];
+    cx.fillStyle = PAPER;
+    for (const poly of [stack, sup, bridge, hull]) fillPoly(poly);
+    cx.strokeStyle = INK; cx.lineWidth = 1.5; cx.beginPath();
+    pl(stack, true, .6); pl(sup, true, .6); pl(bridge, true, .6); pl(hull, true, .8);
+    const tx = w * .3, bd = Math.sign(G.x - (q.x + w / 2)) * q.dir || 1;
+    cx.moveTo(tx + 6, -12); cx.arc(tx, -12, 6, 0, Math.PI, true);
+    ln(tx, -15, tx + 18 * bd, -23, .4);
+    cx.moveTo(-w * .38 + 5, -12); cx.arc(-w * .38, -12, 5, 0, Math.PI, true); ln(-w * .38, -14, -w * .38 + 14 * bd, -20, .4);
+    ln(-w * .04, -33, -w * .04, -46, .3); ln(-w * .04 - 6, -42, -w * .04 + 6, -42, .3);
+    for (let i = 0; i < 4; i++) { const px = -w * .3 + i * w * .18; cx.moveTo(px + 2, -3); cx.arc(px, -3, 2, 0, Math.PI * 2); }
+    cx.stroke();
+    if (q.hp < 100 && !e) { cx.fillStyle = '#c62d1a'; cx.fillRect(-w * .3, -52, w * .6 * Math.max(0, q.hp) / 100, 3); }
+    cx.restore();
+  }
+
+  function drawBC(h) {
+    sd = h.id * 17;
+    cx.save(); cx.translate(h.x, h.y);
+    if (h.fall) cx.rotate(h.rot); else if (h.st === 'dive') cx.rotate(Math.atan2(h.dvy, h.dvx) * .6);
+    const body = [[-38, -2], [-14, -11], [14, -10], [28, -6], [46, -1], [28, 4], [10, 8], [-16, 7]];
+    cx.fillStyle = PAPER; cx.strokeStyle = INK; cx.lineWidth = 1.4;
+    fillPoly(body); cx.beginPath(); pl(body, true, .8);
+    ln(-38, -2, -58, -6, .5);
+    cx.moveTo(-54, -6); cx.arc(-60, -6, 6, 0, Math.PI * 2);
+    const tr = 6 * Math.cos(t * 40 + h.id); ln(-60, -6 - tr, -60, -6 + tr, .1);
+    ln(-2, 7, -8, 20, .5); ln(-8, 20, -18, 26, .4); ln(-8, 20, -12, 30, .4); ln(-8, 20, -2, 30, .4);
+    cx.moveTo(24, -5); cx.arc(21, -5, 3, 0, Math.PI * 2);
+    ln(0, -11, 0, -18, .3);
+    cx.stroke();
+    cx.strokeStyle = '#34479e'; cx.lineWidth = 1.1; cx.beginPath();          // blue flower rotor, as in the sketch
+    for (let i = 0; i < 8; i++) {
+      const a = t * 14 + i * Math.PI / 4, ex = Math.cos(a) * 20, ey = Math.sin(a) * 6;
+      cx.moveTo(0, -19); cx.quadraticCurveTo(ex * .5 + Math.sin(a) * 4, -23 + ey * .5, ex, -19 + ey);
+    }
+    cx.stroke(); cx.restore();
+  }
+
   function drawHeli(h) {
+    if (h.bc) return drawBC(h);
     if (h.jet) return drawJet(h);
     sd = h.id * 13;
     cx.save(); cx.translate(h.x, h.y); if (h.fall) cx.rotate(h.rot);
@@ -767,16 +1066,21 @@
   }
 
   const FIRE = ['#ffd23a', '#ffab1f', '#f2551d', '#c92c1c', '#5a2a22'];
+  const LAVA = ['#fff0a0', '#ffb13b', '#e8401c', '#a8231a', '#3a1f1a'];
   function drawParts() {
     for (const p of parts) {
       const f = p.l / p.L;
       if (p.k === 0 || p.k === 1) {
         cx.globalAlpha = (1 - f) * .85;
-        cx.fillStyle = FIRE[Math.min(4, Math.floor(f * (p.k ? 3.2 : 4.6)))];
+        cx.fillStyle = (p.lava ? LAVA : FIRE)[Math.min(4, Math.floor(f * (p.k ? 3.2 : 4.6)))];
         cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, Math.PI * 2); cx.fill();
       } else if (p.k === 2) {
         cx.globalAlpha = (1 - f) * .4; cx.strokeStyle = INK; cx.lineWidth = .9;
         cx.beginPath(); cx.arc(p.x, p.y, p.r, p.l * 2, p.l * 2 + Math.PI * 1.6); cx.stroke();
+      } else if (p.k === 4) {
+        cx.globalAlpha = Math.min(1, (1 - f) * 2); cx.fillStyle = p.col;
+        cx.font = '700 24px Caveat, "Comic Sans MS", cursive'; cx.textAlign = 'center';
+        cx.fillText(p.txt, p.x, p.y);
       } else {
         cx.globalAlpha = 1 - f; cx.strokeStyle = INK; cx.lineWidth = 1.1;
         cx.beginPath(); cx.moveTo(p.x - Math.cos(p.rot) * p.r, p.y - Math.sin(p.rot) * p.r);
@@ -802,11 +1106,13 @@
     cx.setTransform(k, 0, 0, k, (-camX * S + sx) * DPR, (H - GR * S + sy) * DPR);
     cx.lineCap = 'round'; cx.lineJoin = 'round';
     drawSkyline();
+    if (LV === 3) drawWater();
     drawGround();
     for (const b of buildings) if (b.x < camX + VW + 20 && b.x + b.w > camX - 60) drawBuilding(b);
     drawPeople();
     for (const h of helis) drawHeli(h);
-    if (LV === 1) drawGodzilla(); else drawBird();
+    if (LV === 2) drawBird(); else { drawGodzilla(); drawArm(); }
+    if (LV === 3) { for (const q of ships) drawShip(q); drawWaterFront(); }
     drawParts();
     drawBullets();
   }
@@ -824,34 +1130,44 @@
     setTimeout(() => { b.hidden = true; }, 2200);
   }
   function start(lv) {
-    const keep = lv === 2 && carry ? carry : 0;
+    const keep = carry && carry.lv === lv ? carry.score : 0;
     carry = null;
     initAudio(); reset(lv, keep); running = true; roar(); buzz(80);
     const up = LV === 2;
+    $('act').hidden = LV !== 3; $('hint').classList.toggle('up', LV === 3);
     $('bl').innerHTML = up ? '&uarr;' : '&larr;'; $('br').innerHTML = up ? '&darr;' : '&rarr;';
     $('bl').setAttribute('aria-label', up ? 'Vola in alto' : 'Cammina a sinistra');
     $('br').setAttribute('aria-label', up ? 'Vola in basso' : 'Cammina a destra');
-    $('hint').textContent = up ? '↑ ↓ per volare · tieni premuto: fuoco' : 'tieni premuto per sputare fuoco';
+    $('hint').textContent = up ? '↑ ↓ per volare · tieni premuto: fuoco'
+      : LV === 3 ? 'tieni premuto: lava · pugno alle navi · prendi gli omini' : 'tieni premuto per sputare fuoco';
     $('menu').hidden = true; $('hint').hidden = false;
-    banner(up ? "L'UCCELLONE!" : 'GODZILLA!');
+    banner(up ? "L'UCCELLONE!" : LV === 3 ? 'GODZILLA DI LAVA!' : 'GODZILLA!');
     clearTimeout(hintT); hintT = setTimeout(() => { $('hint').hidden = true; }, 5000);
   }
   function stopFire() {
     G.firing = false;
     if (AC && fireGain) { fireGain.gain.setTargetAtTime(0, AC.currentTime, .05); fireOnSnd = false; }
   }
-  function levelUp() {
-    running = false; stopFire(); carry = score; roar(); buzz([60, 40, 60]);
+  function saveBest() { if (score > best) { best = score; try { localStorage.setItem('gz-best', best); } catch (e) {} } }
+  function levelUp(next) {
+    running = false; stopFire(); carry = { lv: next, score }; roar(); buzz([60, 40, 60]);
     banner('CITTÀ DISTRUTTA!');
     setTimeout(() => {
-      $('res').textContent = `Livello 1 superato: ${fmt(score)} punti. Ora vola l'Uccellone!`;
-      $('play1').innerHTML = 'Rigioca 1<small>Godzilla</small>';
-      $('menu').hidden = false; $('play2').focus();
+      $('res').textContent = next === 2 ? `Livello 1 superato: ${fmt(score)} punti. Ora vola l'Uccellone!`
+        : `Livello 2 superato: ${fmt(score)} punti. Arriva Godzilla di lava!`;
+      $('menu').hidden = false; $('play' + next).focus();
     }, 1600);
   }
+  function win() {
+    running = false; stopFire(); carry = null; saveBest(); roar(); buzz([80, 40, 80, 40, 160]);
+    banner('HAI VINTO!');
+    setTimeout(() => {
+      $('res').textContent = `Hai vinto! ${sunk} navi affondate, ${eaten} omini mangiati · ${fmt(score)} punti`;
+      showBest(); $('menu').hidden = false;
+    }, 2000);
+  }
   function gameOver() {
-    running = false; stopFire(); carry = null;
-    if (score > best) { best = score; try { localStorage.setItem('gz-best', best); } catch (e) {} }
+    running = false; stopFire(); carry = null; saveBest();
     boom(1.2, 1.6); buzz([80, 60, 160]);
     setTimeout(() => {
       $('res').textContent = `K.O. al livello ${LV}! ${fmt(score)} punti`;
@@ -860,6 +1176,7 @@
   }
   $('play1').addEventListener('click', () => start(1));
   $('play2').addEventListener('click', () => start(2));
+  $('play3').addEventListener('click', () => start(3));
 
   reset();
   $('hint').hidden = true;
@@ -867,7 +1184,7 @@
   function frame(now) {
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     if (running) update(dt);
-    else { t += dt; G.jaw *= .9; if (LV === 1) G.bob = Math.sin(t * 2) * 1.2; else G.phase += dt * 5; }
+    else { t += dt; G.jaw *= .9; if (LV !== 2) G.bob = Math.sin(t * 2) * 1.2; else G.phase += dt * 5; }
     render();
     hud();
     requestAnimationFrame(frame);
