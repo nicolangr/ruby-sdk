@@ -69,6 +69,9 @@
     border-radius: 55% 45% 60% 40% / 50% 45% 55% 50%;
     touch-action: none;
   }
+  #act button small { display: block; font-size: 15px; opacity: .6; }
+  .keys { font-size: 18px; color: var(--ink-soft); margin: -8px 0 14px; line-height: 1.2; }
+  .keys kbd { font: 700 16px/1 Caveat, cursive; border: 1.5px solid var(--ink-soft); border-radius: 5px; padding: 1px 5px; }
   #hint.up { top: calc(env(safe-area-inset-top, 0px) + 96px); bottom: auto; }
   #hint {
     position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
@@ -136,8 +139,8 @@
   <button id="br" aria-label="Cammina a destra">&rarr;</button>
 </div>
 <div id="act" hidden>
-  <button id="bp" aria-label="Pugno">pugno</button>
-  <button id="bg" aria-label="Abbassati e prendi un omino">prendi</button>
+  <button id="bp" aria-label="Pugno (tasto X)">pugno<small>X</small></button>
+  <button id="bg" aria-label="Abbassati e prendi un omino (tasto C)">prendi<small>C</small></button>
 </div>
 <div id="hint">tieni premuto per sputare fuoco</div>
 <div id="banner" hidden></div>
@@ -154,6 +157,7 @@
       <li>Livello 3: Godzilla di lava sul fiume. Affonda 8 navi col getto di lava e i pugni, abbassati per prendere e mangiare gli omini. Attento agli uccelli‑elicottero: -100!</li>
       <li>Abbatti elicotteri e jet prima che abbattano te.</li>
     </ul>
+    <p class="keys">Tastiera: <kbd>←</kbd><kbd>→</kbd> cammina · <kbd>↑</kbd><kbd>↓</kbd> muovi la testa · <kbd>spazio</kbd> fuoco · <kbd>X</kbd> pugno · <kbd>C</kbd> prendi · liv. 2: <kbd>W</kbd><kbd>S</kbd> vola</p>
     <div class="lv">
       <button class="play" id="play1">Livello 1<small>Godzilla</small></button>
       <button class="play alt" id="play2">Livello 2<small>Uccellone</small></button>
@@ -396,7 +400,10 @@
       b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 180);
     });
   });
-  addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key === ' ') e.preventDefault(); });
+  addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if (running && (e.key === ' ' || e.key.startsWith('Arrow'))) e.preventDefault();
+  });
   addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
   // ---------- HUD ----------
@@ -470,7 +477,7 @@
     const m = mouthPos(); pop(m[0], m[1] - 24, 'GNAM! +250'); chomp(); buzz(30); hudDirty = true; G.jaw = 14;
   }
   function updateActions(dt) {
-    if (keys.j) startAct('punch'); if (keys.k) startAct('grab');
+    if (keys.x) startAct('punch'); if (keys.c) startAct('grab');
     if (!G.act) { G.lean += (0 - G.lean) * Math.min(1, dt * 10); return; }
     G.actT += dt;
     if (G.act === 'punch') {
@@ -557,7 +564,7 @@
       if (LV === 3) updateActions(dt);
     } else {
       // flying: always forward, player steers up/down
-      const dir = walkBtn || ((keys.w || keys.arrowup) ? -1 : (keys.s || keys.arrowdown) ? 1 : 0);
+      const dir = walkBtn || (keys.w ? -1 : keys.s ? 1 : 0);
       G.x -= (62 + Math.min(dist / 60, 40)) * dt;
       G.vy += (dir * 190 - G.vy) * Math.min(1, dt * 5);
       G.y += G.vy * dt;
@@ -581,11 +588,13 @@
     let tgt = null;
     if (ptr.size) tgt = [...ptr.values()].pop(); else if (aimPt) tgt = aimPt;
     const [px, py] = pivot();
-    if (tgt) {
+    const hi = LV !== 2 ? 1.35 : 1.1, lo = LV !== 2 ? -.75 : -1.1;
+    const kAim = (keys.arrowup ? 1 : 0) - (keys.arrowdown ? 1 : 0);
+    if (kAim) { aimPt = null; G.aim = Math.max(lo, Math.min(hi, G.aim + kAim * 1.8 * dt)); }
+    else if (tgt) {
       const [wx, wy] = toWorld(tgt[0], tgt[1]);
       const dx = wx - px, dy = wy - py;
       let th = Math.atan2(-dy, -dx);
-      const hi = LV !== 2 ? 1.35 : 1.1, lo = LV !== 2 ? -.75 : -1.1;
       if (th > hi || th < lo) th = dy < 0 ? hi : lo;
       G.aim += (th - G.aim) * Math.min(1, dt * 14);
     }
